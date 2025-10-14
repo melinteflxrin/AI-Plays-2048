@@ -286,9 +286,11 @@ class VisualTrainer(GameGUI):
             self.generation_rewards.append(total_reward)
             
             # save best model
+            print(f"Generation {generation}: Score = {final_score}, Best = {self.best_score}")
             if final_score > self.best_score:
                 self.best_score = final_score
-                agent.save_model("../models/dqn_2048_best.pth")
+                model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "dqn_2048_best.pth")
+                agent.save_model(model_path)
                 print(f"*** New best score: {self.best_score} (Generation {generation}) ***")
             
             # decay epsilon once per generation
