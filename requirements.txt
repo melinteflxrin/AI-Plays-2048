@@ -1,1 +1,6 @@
 pygame>=2.6.0
+
+# RL
+gymnasium>=0.29.0
+torch>=2.0.0  
+numpy>=1.24.0
