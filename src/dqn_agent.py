@@ -114,7 +114,10 @@ class DQNAgent:
         loss.backward()
         self.optimizer.step()
 
-        # decay epsilon (explore less over time)
+        # epsilon decay moved to training loop (once per generation)
+    
+    def decay_epsilon(self):
+        """decay epsilon once per generation"""
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
     

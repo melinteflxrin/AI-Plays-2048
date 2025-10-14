@@ -291,6 +291,9 @@ class VisualTrainer(GameGUI):
                 agent.save_model("../models/dqn_2048_best.pth")
                 print(f"*** New best score: {self.best_score} (Generation {generation}) ***")
             
+            # decay epsilon once per generation
+            agent.decay_epsilon()
+            
             # print progress
             if generation % save_frequency == 0:
                 avg_score = sum(list(self.generation_scores)[-100:]) / min(len(self.generation_scores), 100)
@@ -302,14 +305,17 @@ class VisualTrainer(GameGUI):
             agent.save_model("../models/dqn_2048_last.pth")
             print(f"\nTraining completed! Best score: {self.best_score}")
         else:
+            # save model even when stopped early
+            agent.save_model("../models/dqn_2048_last.pth")
             print(f"\nTraining stopped early. Best score: {self.best_score}")
+            print("Model saved to ../models/dqn_2048_last.pth")
         
         pygame.quit()
         return agent, list(self.generation_scores), list(self.generation_rewards)
 
 
 if __name__ == "__main__":
-    generations = 200
+    generations = 500
     
     try:
         visual_trainer = VisualTrainer()

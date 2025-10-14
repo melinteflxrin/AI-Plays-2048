@@ -79,12 +79,12 @@ class Game2048Env(gym.Env):
         # make the move
         moved, points = self.game.make_move(direction)
         
-        # calculate simple reward
+        # calculate reward
         reward = 0.0
         if moved:
-            reward = points * 0.1  # small reward for points gained
+            reward = points * 0.01 + 0.1  # points reward + small move bonus
         else:
-            reward = -1.0  # penalty for invalid moves
+            reward = -0.1  # small penalty for invalid moves
 
         # get new observation
         observation = self._get_observation()
