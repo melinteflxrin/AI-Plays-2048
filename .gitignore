@@ -3,6 +3,11 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Models folder
+models/*.pth
+models/dqn_*
+!models/.gitkeep
+
 # C extensions
 *.so
 
