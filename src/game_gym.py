@@ -2,11 +2,17 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from game import Game2048
+import copy
 
 
 class Game2048Env(gym.Env):
     """
     Gymnasium environment for 2048 game
+    
+    Enhanced to support afterstate learning framework:
+    - Provides both state and afterstate representations
+    - Tracks board before and after random tile placement
+    - Optimized for TD learning (not Q-learning)
     """
     
     def __init__(self):
@@ -19,12 +25,13 @@ class Game2048Env(gym.Env):
         self.action_space = spaces.Discrete(4)
         
         # observation space -> 4x4 grid
-        # normalize tile values using log2 (so 2->1, 4->2, 8->3, etc.)
+        # For TD learning, we work directly with board values (not log2)
+        # This allows N-tuple network to extract features properly
         self.observation_space = spaces.Box(
             low=0,
-            high=15,
+            high=131072,  # Up to 131072-tile (though rare)
             shape=(4, 4),
-            dtype=np.float32
+            dtype=np.int32
         )
         
         # map actions to game directions
@@ -34,23 +41,66 @@ class Game2048Env(gym.Env):
             2: 'left',
             3: 'right'
         }
+        
+        # Track afterstate (board after move, before random tile)
+        self.last_afterstate = None
     
     def _get_observation(self):
         """
-        convert the 4x4 game board to an observation
-        log2 to normalize tile values
+        Convert the 4x4 game board to an observation
+        
+        For TD learning with N-tuple networks, we return the raw board
+        (not log2 normalized) so the network can properly extract features
         """
-        obs = np.zeros((4, 4), dtype=np.float32)
-        
-        for i in range(4):
-            for j in range(4):
-                if self.game.board[i][j] > 0:
-                    # normalize using log2
-                    obs[i][j] = np.log2(self.game.board[i][j])
-                else:
-                    obs[i][j] = 0
-        
+        obs = np.array(self.game.board, dtype=np.int32)
         return obs
+    
+    def get_afterstate(self, action):
+        """
+        Get the afterstate: board after move but before random tile
+        
+        This is critical for afterstate learning framework.
+        Returns the deterministic result of the player's action.
+        
+        Args:
+            action: 0=up, 1=down, 2=left, 3=right
+            
+        Returns:
+            afterstate_board: Board after move (before random tile)
+            reward: Points earned from merging
+            valid: Whether the move was valid
+        """
+        # Create a temporary game to simulate the move
+        temp_game = Game2048()
+        temp_game.board = copy.deepcopy(self.game.board)
+        temp_game.score = self.game.score
+        temp_game.game_over = self.game.game_over
+        
+        direction = self.action_to_direction[action]
+        moved, points = temp_game.make_move(direction)
+        
+        if not moved:
+            return None, 0, False
+        
+        # The afterstate is the board before add_random_tile was called
+        # We need to simulate without the random tile
+        temp_game2 = Game2048()
+        temp_game2.board = copy.deepcopy(self.game.board)
+        temp_game2.score = self.game.score
+        temp_game2.game_over = self.game.game_over
+        
+        # Manually perform the move without adding random tile
+        if direction == 'left':
+            _, pts = temp_game2.move_left()
+        elif direction == 'right':
+            _, pts = temp_game2.move_right()
+        elif direction == 'up':
+            _, pts = temp_game2.move_up()
+        elif direction == 'down':
+            _, pts = temp_game2.move_down()
+        
+        afterstate_board = np.array(temp_game2.board, dtype=np.int32)
+        return afterstate_board, pts, True
     
     def reset(self, seed=None, options=None):
         """reset the game to start a new episode"""
@@ -68,36 +118,45 @@ class Game2048Env(gym.Env):
     
     def step(self, action):
         """
-        one step in the environment
+        Take one step in the environment
+        
+        Enhanced for TD learning:
+        - Returns actual board state (not log2)
+        - Tracks afterstate for learning
+        - Provides detailed info for TD updates
         """
-        # convert action number to direction
+        # Store afterstate before random tile
+        afterstate_board, move_reward, valid = self.get_afterstate(action)
+        
+        # Convert action number to direction
         direction = self.action_to_direction[action]
         
-        # store old score for reward calculation
-        old_score = self.game.score
-        
-        # make the move
+        # Make the move (this adds random tile)
         moved, points = self.game.make_move(direction)
         
-        # calculate reward
-        reward = 0.0
-        if moved:
-            reward = points * 0.01 + 0.1  # points reward + small move bonus
-        else:
-            reward = -0.1  # small penalty for invalid moves
-
-        # get new observation
+        # Calculate reward
+        # For TD learning, the reward is simply the points earned
+        # (no artificial bonuses/penalties)
+        reward = float(points) if moved else 0.0
+        
+        # Get new observation (board with random tile)
         observation = self._get_observation()
 
-        # check if game is over
+        # Check if game is over
         terminated = self.game.game_over
         truncated = False
         
-        # info dictionary
+        # Store afterstate for potential use
+        if valid:
+            self.last_afterstate = afterstate_board
+        
+        # Enhanced info dictionary for TD learning
         info = {
             "score": self.game.score,
             "moved": moved,
-            "points_gained": points
+            "points_gained": points,
+            "afterstate": afterstate_board if valid else None,
+            "max_tile": int(np.max(self.game.board))
         }
         
         return observation, reward, terminated, truncated, info
