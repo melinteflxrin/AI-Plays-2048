@@ -57,7 +57,13 @@ class Game2048:
             merged_row += [0] * (4 - len(merged_row))
             
             # check if this row changed
-            if self.board[i] != merged_row:
+            row_changed = False
+            for j in range(4):
+                if self.board[i][j] != merged_row[j]:
+                    row_changed = True
+                    break
+            
+            if row_changed:
                 moved = True
                 self.board[i] = merged_row
         
