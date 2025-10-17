@@ -446,11 +446,27 @@ class VisualTrainer(GameGUI):
 
 
 if __name__ == "__main__":
-    # Training configuration
-    EPISODES = 10000  # Increased - TD learning needs more episodes to converge
-    TUPLE_PATTERNS = '4x6'  # Start with 4x6 (faster), upgrade to '8x6' for better performance
-    LEARNING_METHOD = 'OTD+TC'  # Hybrid method (recommended)
-    V_INIT = 0  # Optimistic initialization value
+    # Training configuration - RESUME FROM BEST MODEL with improvements
+    EPISODES = 50000  # Continue training for 50k more episodes with better settings
+    TUPLE_PATTERNS = '8x6'  # 8x6-tuple network (matches your best model)
+    
+    # LEARNING METHOD: Choose based on your needs
+    # 'OTD' = Optimistic TD (stable, no fine-tuning crash risk)
+    # 'OTC' = Optimistic TC (faster convergence, needs higher V_INIT)
+    # 'OTD+TC' = Hybrid (best but risky with low V_INIT)
+    LEARNING_METHOD = 'OTD'  # Stable learning without catastrophic forgetting
+    
+    # INITIALIZATION: Not used when loading existing model
+    V_INIT = 0  # Only used if starting fresh (ignored when loading)
+    
+    # RESUME TRAINING SETTINGS
+    LOAD_MODEL = True  # Set to True to resume from best model
+    LOAD_MODEL_PATH = "models/td_2048_best_8x6.pkl"  # Your peak performance model
+    USE_LR_DECAY = True  # CRITICAL: Prevents catastrophic interference
+    INITIAL_LR = 0.025  # Start with lower LR for fine-tuning (was 0.1)
+    MIN_LR = 0.005  # Don't go below this
+    LR_DECAY_RATE = 0.9995  # Gradual decay: 0.025 → 0.005 over 50k episodes
+    
     VISUAL_MODE = False  # Set to False for faster training without visualization
     
     print("\n" + "="*70)
@@ -487,11 +503,24 @@ if __name__ == "__main__":
             )
         else:
             # Fast training without visualization
-            print("Running fast training mode (no visualization)...")
-            print("This will be much faster for convergence.\n")
+            if LOAD_MODEL:
+                print("="*70)
+                print("RESUMING TRAINING FROM BEST MODEL")
+                print("="*70)
+                print(f"Loading model from: {LOAD_MODEL_PATH}")
+                print(f"Training for {EPISODES:,} more episodes")
+                print(f"Learning rate decay: {INITIAL_LR} -> {MIN_LR}")
+                print("="*70 + "\n")
+            else:
+                print("Running fast training mode (no visualization)...")
+                print("This will be much faster for convergence.\n")
             
             env = Game2048Env()
-            if LEARNING_METHOD == 'OTC':
+            
+            # Set initial learning rate
+            if USE_LR_DECAY:
+                learning_rate = INITIAL_LR
+            elif LEARNING_METHOD == 'OTC':
                 learning_rate = 1.0
             else:
                 learning_rate = 0.1
@@ -503,11 +532,35 @@ if __name__ == "__main__":
                 learning_rate=learning_rate,
                 fine_tune_ratio=0.1
             )
+            
+            # Load existing model if specified
+            if LOAD_MODEL:
+                model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), LOAD_MODEL_PATH)
+                if os.path.exists(model_path):
+                    agent.load_model(model_path)
+                    print(f"[OK] Model loaded successfully!\n")
+                else:
+                    print(f"[WARNING] Model file not found at {model_path}")
+                    print("Starting fresh training instead.\n")
+            
             agent.set_total_training_episodes(EPISODES)
             
             os.makedirs("../models", exist_ok=True)
-            best_score = 0
-            best_max_tile = 0
+            
+            # Initialize best scores - higher if resuming from saved model
+            if LOAD_MODEL:
+                # Set high initial values so we only save when truly improving
+                best_score = 45000  # Approximate score from loaded model
+                best_max_tile = 4096  # We know the loaded model reached 4096
+                print(f"Starting with best score threshold: {best_score:,} (from loaded model)")
+                print(f"Will only save new models if they beat this score\n")
+            else:
+                best_score = 0
+                best_max_tile = 0
+            
+            # Track best checkpoint performance to detect decline
+            best_checkpoint_2048_rate = 0
+            checkpoint_decline_count = 0
             
             # Track statistics
             recent_scores = []
@@ -517,6 +570,11 @@ if __name__ == "__main__":
             for episode in range(1, EPISODES + 1):
                 score, steps = agent.train_episode(env)
                 max_tile = int(np.max(env.game.board))
+                
+                # Apply learning rate decay
+                if USE_LR_DECAY and episode % 10 == 0:  # Decay every 10 episodes
+                    new_lr = max(MIN_LR, agent.learning_rate * LR_DECAY_RATE)
+                    agent.learning_rate = new_lr
                 
                 recent_scores.append(score)
                 recent_max_tiles.append(max_tile)
@@ -533,6 +591,7 @@ if __name__ == "__main__":
                     model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
                                              "models", f"td_2048_best_{TUPLE_PATTERNS}.pkl")
                     agent.save_model(model_path)
+                    print(f"*** NEW BEST SCORE: {best_score:,} (Episode {episode}) ***")
                 
                 if max_tile > best_max_tile:
                     best_max_tile = max_tile
@@ -550,11 +609,39 @@ if __name__ == "__main__":
                 if episode % 1000 == 0:
                     print("\nTile Achievement Distribution (last 1000 episodes):")
                     sorted_tiles = sorted(tile_achievements.keys(), reverse=True)
+                    
+                    # Calculate 2048 rate for decline detection
+                    rate_2048 = (tile_achievements.get(2048, 0) / 1000) * 100
+                    rate_4096 = (tile_achievements.get(4096, 0) / 1000) * 100
+                    
                     for tile in sorted_tiles:
                         if tile >= 256:  # Only show significant tiles
                             count = tile_achievements[tile]
                             percentage = (count / 1000) * 100
                             print(f"  {tile:5d}-tile: {count:4d} times ({percentage:5.1f}%)")
+                    
+                    # Save periodic checkpoint with episode number
+                    checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                                  "models", f"td_2048_ep{episode}_{TUPLE_PATTERNS}.pkl")
+                    agent.save_model(checkpoint_path)
+                    print(f"  [Checkpoint saved: episode {episode}]")
+                    
+                    # Monitor for performance decline
+                    if rate_2048 > best_checkpoint_2048_rate:
+                        best_checkpoint_2048_rate = rate_2048
+                        checkpoint_decline_count = 0
+                        print(f"  [*] New best 2048 rate: {rate_2048:.1f}%")
+                    elif rate_2048 < best_checkpoint_2048_rate * 0.7:  # 30% decline
+                        checkpoint_decline_count += 1
+                        print(f"  [!] Performance declining ({checkpoint_decline_count}/3 warnings)")
+                        if checkpoint_decline_count >= 3:
+                            print(f"\n{'='*70}")
+                            print(f"EARLY STOPPING: Performance declined for 3 consecutive checkpoints")
+                            print(f"Best 2048 rate was: {best_checkpoint_2048_rate:.1f}%")
+                            print(f"Current rate: {rate_2048:.1f}%")
+                            print(f"{'='*70}\n")
+                            break
+                    
                     tile_achievements = {}  # Reset counter
                     print()
             
