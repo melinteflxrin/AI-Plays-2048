@@ -31,37 +31,54 @@ class ModelViewer(GameGUI):
         
         pygame.display.set_caption("2048 AI - Model Viewer")
         
+        # Add extra small font for controls
+        self.font_tiny = pygame.font.Font(None, 22)
+        
         # Viewing settings
         self.move_delay = 300  # milliseconds between moves
         self.paused = False
+        self.current_action = ""  # Track current AI move
+        self.move_count = 0
+        self.max_tile = 0
+    
+    def draw_header(self):
+        """Override parent's draw_header with AI-specific version"""
+        # Draw score (top left)
+        score_text = self.font_large.render(f"Score: {self.game.score}", True, COLORS['text_dark'])
+        self.screen.blit(score_text, (20, 20))
         
-    def draw_info(self, move_count, max_tile, action_name=""):
-        """Draw additional info for AI viewer"""
-        # Draw score and game info (reuse parent's draw_header)
-        self.draw_header()
+        # Draw AI move (top right)
+        if self.current_action:
+            move_text = f"AI Move: {self.current_action}"
+            move_color = (34, 197, 94)  # Green
+            move_surface = self.font_medium.render(move_text, True, move_color)
+            move_rect = move_surface.get_rect()
+            move_rect.topright = (self.window_width - 20, 25)
+            self.screen.blit(move_surface, move_rect)
         
-        # Add AI-specific info
-        y_pos = 60
+        # Game stats (middle line)
+        stats_text = f"Max Tile: {self.max_tile} | Moves: {self.move_count}"
+        stats_surface = self.font_small.render(stats_text, True, COLORS['text_dark'])
+        self.screen.blit(stats_surface, (20, 70))
         
-        # Max tile and moves
-        info_text = f"Max Tile: {max_tile} | Moves: {move_count}"
-        info_surface = self.font_medium.render(info_text, True, COLORS['text_dark'])
-        self.screen.blit(info_surface, (20, y_pos))
-        y_pos += 40
-        
-        # Current action or status
+        # Controls (bottom line)
         if self.paused:
-            status_text = "PAUSED - Press SPACE to continue"
+            control_text = "PAUSED - Press SPACE to continue"
             color = (239, 68, 68)  # Red
-        elif action_name:
-            status_text = f"AI Move: {action_name}"
-            color = (34, 197, 94)  # Green
+            font = self.font_small
         else:
-            status_text = "Controls: SPACE=Pause | UP/DOWN=Speed | R=Restart | ESC=Quit"
+            control_text = "SPACE: Pause | UP/DOWN: Speed | R: Restart | ESC: Quit"
             color = COLORS['text_dark']
+            font = self.font_tiny  # Use smaller font for controls
         
-        status_surface = self.font_small.render(status_text, True, color)
-        self.screen.blit(status_surface, (20, y_pos))
+        control_surface = font.render(control_text, True, color)
+        self.screen.blit(control_surface, (20, 95))
+    
+    def draw_info(self, move_count, max_tile, action_name=""):
+        """Update internal state for header display"""
+        self.move_count = move_count
+        self.max_tile = max_tile
+        self.current_action = action_name
     
     def play_game(self):
         """Watch AI play one complete game"""
@@ -97,8 +114,9 @@ class ModelViewer(GameGUI):
                         print(f"Slower! Delay: {self.move_delay}ms")
             
             # Draw current state
-            self.draw_board()
             self.draw_info(move_count, max_tile, current_action)
+            self.draw_header()
+            self.draw_board()
             pygame.display.flip()
             
             if self.paused:
@@ -111,8 +129,9 @@ class ModelViewer(GameGUI):
             move_count += 1
             
             # Show decision briefly
-            self.draw_board()
             self.draw_info(move_count, max_tile, current_action)
+            self.draw_header()
+            self.draw_board()
             pygame.display.flip()
             pygame.time.wait(self.move_delay)
             
@@ -131,8 +150,9 @@ class ModelViewer(GameGUI):
                 final_score = env.game.score
                 
                 # Draw final state
-                self.draw_board()
                 self.draw_info(move_count, max_tile, "")
+                self.draw_header()
+                self.draw_board()
                 
                 # Game over message
                 game_over_text = "GAME OVER"
@@ -166,7 +186,7 @@ def main():
     print("="*70)
     print("\nControls:")
     print("  SPACE: Pause/Resume")
-    print("  UP/DOWN: Adjust speed")
+    print("  UP/DOWN: Speed")
     print("  R: Restart game")
     print("  ESC: Quit")
     print("="*70 + "\n")
