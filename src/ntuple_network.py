@@ -1,9 +1,8 @@
 """
-N-Tuple Network Implementation for 2048
-Based on state-of-the-art research (Guei et al., 2023)
+N-Tuple Network for 2048
 
-This implements a lookup table-based feature extraction network
-that significantly outperforms deep neural networks for 2048.
+implements a lookup table-based feature extraction network
+that significantly outperforms deep neural networks for 2048
 """
 import numpy as np
 from collections import defaultdict
@@ -14,20 +13,16 @@ class NTupleNetwork:
     """
     N-Tuple Network with symmetric sampling (8 isomorphic transformations)
     
-    Key advantages over DQN:
-    - Domain-specific feature extraction for board games
-    - Faster training and inference (simple lookup vs neural network)
-    - Better generalization through symmetric sampling
-    - State-of-the-art results for 2048
+    advantages over DQN:
+    - faster training (simple lookup vs neural network)
+    - better generalization -> symmetric sampling
     """
     
     def __init__(self, tuple_patterns='4x6', n_values=16, v_init=0.0):
         """
-        Initialize N-tuple network
-        
-        Args:
+        args:
             tuple_patterns: '4x6' or '8x6' tuple configuration
-            n_values: number of distinct tile values (16 = up to 32768-tile)
+            n_values: number of distinct tile values (16 = up to 32768 tile)
             v_init: initial value for optimistic initialization
         """
         self.n_values = n_values
