@@ -28,7 +28,7 @@ class NTupleNetwork:
         self.n_values = n_values
         self.v_init = v_init
         
-        # Define tuple patterns based on research
+        # define tuple patterns based on research
         if tuple_patterns == '4x6':
             self.tuples = self._get_4x6_tuples()
         elif tuple_patterns == '8x6':
@@ -38,8 +38,9 @@ class NTupleNetwork:
         
         self.n_tuples = len(self.tuples)
         
-        # Initialize lookup tables (LUTs) for each tuple
-        # Using defaultdict for automatic initialization
+        # initialize lookup tables for each tuple
+        # using defaultdict for automatic initialization 
+        # -> add new entries of patterns into the dict
         self.weights = [defaultdict(lambda: v_init / self.n_tuples) 
                        for _ in range(self.n_tuples)]
         
@@ -52,26 +53,26 @@ class NTupleNetwork:
         Used in the research, achieves ~280k average score with OTC
         """
         return [
-            # Row patterns
-            [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1)],  # Top-left corner
-            [(0, 2), (0, 3), (1, 2), (1, 3), (2, 2), (2, 3)],  # Top-right corner
-            # Column patterns
-            [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1)],  # Left column
-            [(2, 2), (3, 2), (2, 3), (3, 3), (1, 2), (1, 3)],  # Bottom-right corner
+            # row patterns
+            [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1)],  # top-left corner
+            [(0, 2), (0, 3), (1, 2), (1, 3), (2, 2), (2, 3)],  # top-right corner
+            # column patterns
+            [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1)],  # left column
+            [(2, 2), (3, 2), (2, 3), (3, 3), (1, 2), (1, 3)],  # bottom-right corner
         ]
     
     def _get_8x6_tuples(self):
         """
         Matsuzaki's 8x6-tuple network configuration (Figure 5 from paper)
-        Used in state-of-the-art results, achieves ~371k average score with OTD+TC
+        achieves ~371k average score with OTD+TC
         """
         return [
-            # Row patterns (horizontal)
+            # row patterns (horizontal)
             [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1)],
             [(0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2)],
             [(0, 2), (0, 3), (1, 1), (1, 2), (1, 3), (2, 2)],
             [(0, 3), (1, 2), (1, 3), (2, 2), (2, 3), (3, 3)],
-            # Additional patterns for better coverage
+            # additional patterns for better coverage
             [(1, 0), (1, 1), (2, 0), (2, 1), (3, 0), (3, 1)],
             [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2)],
             [(1, 2), (1, 3), (2, 2), (2, 3), (3, 2), (3, 3)],
@@ -80,22 +81,22 @@ class NTupleNetwork:
     
     def _board_to_tuple(self, board, positions):
         """
-        Extract tuple feature from board at given positions
+        extract tuple feature from board at given positions
         
-        Returns:
-            tuple: Feature values at specified positions
+        returns:
+            tuple: feature values at specified positions
         """
         return tuple(int(board[i][j]) for i, j in positions)
     
     def _get_isomorphic_boards(self, board):
         """
-        Generate all 8 isomorphic transformations (rotations + reflections)
+        make all 8 isomorphic transformations (rotations + mirrors)
         
-        This is the key to symmetric sampling:
+        the key to symmetric sampling:
         - 4 rotations (0°, 90°, 180°, 270°)
-        - Each rotation can be mirrored
+        - each rotation can be mirrored
         
-        Returns:
+        returns:
             list: 8 transformed boards
         """
         boards = []
@@ -104,29 +105,29 @@ class NTupleNetwork:
         # 4 rotations
         for _ in range(4):
             boards.append(current.tolist())
-            boards.append(np.fliplr(current).tolist())  # Mirror horizontally
+            boards.append(np.fliplr(current).tolist())  # mirror horizontally
             current = np.rot90(current)
         
         return boards
     
     def evaluate(self, board):
         """
-        Evaluate board state using all tuples and symmetric sampling
+        evaluate board state using all tuples and symmetric sampling
+        -> how good are the patterns of the board?
+        core value function V(s) that sums all feature weights
         
-        This is the core value function V(s) that sums all feature weights
-        
-        Args:
+        args:
             board: 4x4 board state (list of lists or numpy array)
             
-        Returns:
-            float: Estimated value of the board state
+        returns:
+            float: estimated value of the board state
         """
         total_value = 0.0
         
-        # Get all 8 isomorphic boards
+        # get all 8 isomorphic boards
         iso_boards = self._get_isomorphic_boards(board)
-        
-        # For each tuple, sum values across all isomorphic transformations
+
+        # for each tuple, sum values across all isomorphic transformations
         for tuple_idx, positions in enumerate(self.tuples):
             for iso_board in iso_boards:
                 feature = self._board_to_tuple(iso_board, positions)
@@ -136,28 +137,20 @@ class NTupleNetwork:
     
     def update(self, board, delta, learning_rate=0.1):
         """
-        Update feature weights using TD error
+        update lookup table using TD error
         
-        This implements the TD(0) update rule:
-        w_i <- w_i + (α / n) * δ
-        
-        Where:
-        - α is the learning rate
-        - n is the number of tuples
-        - δ is the TD error
-        
-        Args:
+        args:
             board: 4x4 board state
             delta: TD error (target - current_value)
-            learning_rate: learning rate α
+            learning_rate
         """
-        # Distribute update equally across all tuples
+        # distribute update equally across all tuples
         update_amount = (learning_rate / self.n_tuples) * delta
-        
-        # Get all 8 isomorphic boards
+
+        # get all 8 isomorphic boards
         iso_boards = self._get_isomorphic_boards(board)
-        
-        # Update weights for each tuple and each isomorphic transformation
+
+        # update weights for each tuple and each board orientation
         for tuple_idx, positions in enumerate(self.tuples):
             for iso_board in iso_boards:
                 feature = self._board_to_tuple(iso_board, positions)
@@ -165,18 +158,15 @@ class NTupleNetwork:
     
     def update_with_coherence(self, board, delta, coherence_params):
         """
-        Update using Temporal Coherence (TC) learning with adaptive learning rate
+        update using Temporal Coherence (TC) learning with adaptive learning rate
         
-        This implements equation (14) from the paper:
-        w_i <- w_i + α * c_i * δ
-        
-        Where c_i is the coherence parameter that reduces learning rate
-        when TD errors oscillate between positive and negative
-        
-        Args:
+        args:
             board: 4x4 board state
             delta: TD error
             coherence_params: dict with 'psi' and 'phi' for each feature
+
+        psi - sum of errors (the net direction of this pattern)
+        phi - sum of absolute errors (how much this pattern has been updated)
         """
         iso_boards = self._get_isomorphic_boards(board)
         
@@ -184,28 +174,28 @@ class NTupleNetwork:
             for iso_board in iso_boards:
                 feature = self._board_to_tuple(iso_board, positions)
                 
-                # Get coherence parameters for this feature
+                # get coherence parameters for this feature
                 if feature not in coherence_params[tuple_idx]:
                     coherence_params[tuple_idx][feature] = {'psi': 0.0, 'phi': 0.0}
                 
                 params = coherence_params[tuple_idx][feature]
                 
-                # Update psi and phi (equation 16 from paper)
+                # update psi and phi (equation 16 from paper)
                 params['psi'] += delta
                 params['phi'] += abs(delta)
-                
-                # Calculate coherence (equation 15 from paper)
+
+                # calculate coherence (equation 15 from paper)
                 if params['phi'] > 0:
                     coherence = abs(params['psi']) / params['phi']
                 else:
                     coherence = 1.0
-                
-                # Update weight with coherence modulation
+
+                # update weight with coherence modulation
                 update_amount = (coherence / self.n_tuples) * delta
                 self.weights[tuple_idx][feature] += update_amount
     
     def save(self, filepath):
-        """Save the network weights to file"""
+        """save the network weights to file"""
         save_data = {
             'weights': [{k: v for k, v in w.items()} for w in self.weights],
             'tuples': self.tuples,
@@ -218,7 +208,7 @@ class NTupleNetwork:
         print(f"Network saved to {filepath}")
     
     def load(self, filepath):
-        """Load network weights from file"""
+        """load network weights from file"""
         with open(filepath, 'rb') as f:
             save_data = pickle.load(f)
         
@@ -227,7 +217,7 @@ class NTupleNetwork:
         self.n_values = save_data['n_values']
         self.v_init = save_data['v_init']
         
-        # Reconstruct defaultdicts
+        # reconstruct defaultdicts
         self.weights = [defaultdict(lambda: 0.0) for _ in range(self.n_tuples)]
         for i, w in enumerate(save_data['weights']):
             self.weights[i].update(w)
@@ -235,7 +225,7 @@ class NTupleNetwork:
         print(f"Network loaded from {filepath}")
     
     def get_statistics(self):
-        """Get statistics about the network"""
+        """get statistics about the network"""
         total_features = sum(len(w) for w in self.weights)
         avg_value = np.mean([np.mean(list(w.values())) for w in self.weights if len(w) > 0])
         

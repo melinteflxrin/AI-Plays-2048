@@ -1,13 +1,12 @@
 """
 TD Agent with Optimistic Temporal Difference Learning for 2048
-Based on state-of-the-art research (Guei et al., 2023)
+based on research (Hung Guei et al., 2023)
 
-This replaces the DQN agent with a much more effective approach:
+replaces the DQN agent with a more effective approach:
 - N-tuple networks instead of deep neural networks
 - TD learning instead of Q-learning (better for 2048)
-- Afterstate learning framework (evaluates state after player move)
-- Optimistic initialization for systematic exploration
-- Temporal Coherence for adaptive learning rates
+- afterstate learning framework (evaluates state after player move)
+- optimistic initialization
 """
 import numpy as np
 import copy
@@ -17,17 +16,17 @@ from ntuple_network import NTupleNetwork
 
 class TDAgent:
     """
-    Temporal Difference Learning Agent for 2048
+    temporal difference learning agent for 2048
     
-    Implements three learning methods:
-    1. OTD (Optimistic TD): Fixed learning rate with optimistic initialization
-    2. OTC (Optimistic TC): Temporal coherence with adaptive learning rates
-    3. OTD+TC: Hybrid approach (OTD first, then TC fine-tuning)
+    three learning methods:
+    1. OTD (Optimistic TD): fixed learning rate with optimistic initialization
+    2. OTC (Optimistic TC): temporal coherence with adaptive learning rates 
+        - TC -> slower learning for oscillating patterns
+    3. OTD+TC: hybrid approach (OTD first, then TC fine-tuning)
     
-    Performance (from research paper):
-    - OTC + 4x6-tuple: ~280k avg score, 5.3% reach 32768-tile
-    - OTD+TC + 8x6-tuple: ~371k avg score, 22% reach 32768-tile
-    - With 3-ply search: ~475k avg score, 51% reach 32768-tile
+    performance (from research paper):
+    - OTC + 4x6-tuple: ~280k avg score, 5.3% reach 32768 tile
+    - OTD+TC + 8x6-tuple: ~371k avg score, 22% reach 32768 tile
     """
     
     def __init__(self, 
@@ -38,15 +37,13 @@ class TDAgent:
                  fine_tune_ratio=0.1,
                  trace_lambda=0.0):
         """
-        Initialize TD agent
-        
-        Args:
+        args:
             tuple_patterns: '4x6' (faster) or '8x6' (better performance)
             learning_method: 'OTD', 'OTC', or 'OTD+TC'
-            v_init: Optimistic initial value (320k works well for both networks)
-            learning_rate: Initial learning rate α (0.1 for OTD, 1.0 for OTC)
-            fine_tune_ratio: Proportion of training for TC fine-tuning in OTD+TC
-            trace_lambda: TD(λ) parameter (0.0 = TD(0), 0.5 = TD(0.5))
+            v_init: optimistic initial value
+            learning_rate: how much to adjust values when discovering an error (0.1 for OTD, 1.0 for OTC)
+            fine_tune_ratio: proportion of training for TC fine-tuning in OTD+TC
+            trace_lambda: how much to look behind when learning
         """
         self.tuple_patterns = tuple_patterns
         self.learning_method = learning_method
@@ -56,28 +53,28 @@ class TDAgent:
         self.fine_tune_ratio = fine_tune_ratio
         self.trace_lambda = trace_lambda
         
-        # Initialize N-tuple network
+        # initialize N-tuple network
         self.network = NTupleNetwork(
             tuple_patterns=tuple_patterns,
-            n_values=16,  # Up to 32768-tile
+            n_values=16,  # up to 32768 tile
             v_init=v_init
         )
         
-        # Temporal Coherence parameters (for OTC and OTD+TC fine-tuning)
+        # temporal coherence parameters (for OTC and OTD+TC fine-tuning)
         self.coherence_params = [defaultdict(dict) for _ in range(self.network.n_tuples)]
         
-        # Training state
+        # training state
         self.episodes_trained = 0
         self.phase = 'exploration'  # 'exploration' or 'fine-tuning'
         self.total_training_episodes = None
         
-        # Learning rate schedule for OTD
+        # learning rate schedule for OTD
         self.lr_schedule = {
-            0.50: 0.01,   # At 50% training, reduce to 0.01
-            0.75: 0.001,  # At 75% training, reduce to 0.001
+            0.50: 0.01,   # at 50% training, reduce to 0.01
+            0.75: 0.001,  # at 75% training, reduce to 0.001
         }
         
-        # Statistics
+        # statistics
         self.stats = {
             'positive_td_errors': 0,
             'negative_td_errors': 0,
@@ -96,22 +93,22 @@ class TDAgent:
         print(f"{'='*60}\n")
     
     def set_total_training_episodes(self, total):
-        """Set total training episodes for learning rate scheduling"""
+        """set total training episodes"""
         self.total_training_episodes = total
     
     def _update_learning_rate(self):
-        """Update learning rate based on training progress (for OTD method)"""
+        """update learning rate based on training progress (for OTD method)"""
         if self.learning_method == 'OTD' and self.total_training_episodes:
             progress = self.episodes_trained / self.total_training_episodes
             
             for threshold, new_lr in sorted(self.lr_schedule.items()):
                 if progress >= threshold and self.learning_rate > new_lr:
                     self.learning_rate = new_lr
-                    print(f"\n[Epoch {self.episodes_trained}] Learning rate reduced to {new_lr}")
+                    print(f"\n[Episode {self.episodes_trained}] Learning rate reduced to {new_lr}")
                     break
     
     def _update_phase(self):
-        """Switch from exploration to fine-tuning phase (for OTD+TC method)"""
+        """switch from exploration to fine-tuning phase (for OTD+TC method)"""
         if self.learning_method == 'OTD+TC' and self.total_training_episodes:
             progress = self.episodes_trained / self.total_training_episodes
             fine_tune_start = 1.0 - self.fine_tune_ratio
@@ -120,27 +117,27 @@ class TDAgent:
                 self.phase = 'fine-tuning'
                 self.learning_rate = 1.0  # TC learning uses α=1.0
                 print(f"\n{'='*60}")
-                print(f"[Epoch {self.episodes_trained}] Switching to TC Fine-tuning Phase")
+                print(f"[Episode {self.episodes_trained}] Switching to TC Fine-tuning Phase")
                 print(f"{'='*60}\n")
     
     def get_afterstate(self, board, action):
         """
-        Get afterstate (board after action but before random tile)
+        get afterstate (board after action but before random tile)
+
+        the core of the afterstate learning framework
+        instead of evaluating states, evaluate afterstates which are
+        deterministic outcomes of the player's actions
         
-        This is the core of the afterstate learning framework.
-        Instead of evaluating states, we evaluate afterstates which are
-        deterministic outcomes of the player's actions.
-        
-        Args:
+        args:
             board: Current board state (4x4 list)
             action: 0=up, 1=down, 2=left, 3=right
-            
-        Returns:
-            afterstate_board: Board after the move
-            reward: Points gained from merging
-            valid: Whether the move was valid
+
+        returns:
+            afterstate_board: board after the move
+            reward: points gained from merging
+            valid: if move was valid
         """
-        # Create a copy to simulate the move
+        # create a copy to simulate the move
         from game import Game2048
         temp_game = Game2048()
         temp_game.board = copy.deepcopy(board)
@@ -150,10 +147,10 @@ class TDAgent:
         moved, points = temp_game.make_move(action_map[action])
         
         if moved:
-            # Remove the random tile that was added
-            # We want the afterstate (before random tile)
-            # Find and remove the last added tile
-            pass  # For simplicity, we'll work with the state after random tile
+            # remove the random tile that was added
+            # we want the afterstate (before random tile)
+            # find and remove the last added tile
+            pass  # for simplicity, we'll work with the state after random tile
         
         return temp_game.board, points, moved
     
