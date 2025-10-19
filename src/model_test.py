@@ -1,6 +1,5 @@
 """
-Model Test Script - Watch your trained TD agent play 2048
-Uses your existing GameGUI implementation
+watch your trained AI play 2048
 """
 import pygame
 import os
@@ -12,13 +11,13 @@ from game_gui import GameGUI, COLORS
 
 
 class ModelViewer(GameGUI):
-    """Extends GameGUI to watch trained models play"""
+    """extends GameGUI to watch trained models play"""
     
     def __init__(self, model_path):
-        """Initialize viewer with trained model"""
+        """initialize viewer with trained model"""
         super().__init__()
         
-        # Load agent
+        # load agent
         print(f"Loading model from: {model_path}")
         self.agent = TDAgent(
             tuple_patterns='8x6',
@@ -31,60 +30,60 @@ class ModelViewer(GameGUI):
         
         pygame.display.set_caption("2048 AI - Model Viewer")
         
-        # Add extra small font for controls
+        # smaller font for controls
         self.font_tiny = pygame.font.Font(None, 22)
         
-        # Viewing settings
+        # viewing settings
         self.move_delay = 300  # milliseconds between moves
         self.paused = False
-        self.current_action = ""  # Track current AI move
+        self.current_action = ""  # track current AI move
         self.move_count = 0
         self.max_tile = 0
     
     def draw_header(self):
-        """Override parent's draw_header with AI-specific version"""
-        # Draw score (top left)
+        """override parent draw_header with AI-specific version"""
+        # draw score (top left)
         score_text = self.font_large.render(f"Score: {self.game.score}", True, COLORS['text_dark'])
         self.screen.blit(score_text, (20, 20))
         
-        # Draw AI move (top right)
+        # AI move (top right)
         if self.current_action:
             move_text = f"AI Move: {self.current_action}"
-            move_color = (34, 197, 94)  # Green
+            move_color = (34, 197, 94)  # green
             move_surface = self.font_medium.render(move_text, True, move_color)
             move_rect = move_surface.get_rect()
             move_rect.topright = (self.window_width - 20, 25)
             self.screen.blit(move_surface, move_rect)
         
-        # Game stats (middle line)
+        # game stats (middle)
         stats_text = f"Max Tile: {self.max_tile} | Moves: {self.move_count}"
         stats_surface = self.font_small.render(stats_text, True, COLORS['text_dark'])
         self.screen.blit(stats_surface, (20, 70))
         
-        # Controls (bottom line)
+        # controls (bottom line)
         if self.paused:
             control_text = "PAUSED - Press SPACE to continue"
-            color = (239, 68, 68)  # Red
+            color = (239, 68, 68)  # red
             font = self.font_small
         else:
             control_text = "SPACE: Pause | UP/DOWN: Speed | R: Restart | ESC: Quit"
             color = COLORS['text_dark']
-            font = self.font_tiny  # Use smaller font for controls
+            font = self.font_tiny  # smaller font for controls
         
         control_surface = font.render(control_text, True, color)
         self.screen.blit(control_surface, (20, 95))
     
     def draw_info(self, move_count, max_tile, action_name=""):
-        """Update internal state for header display"""
+        """update state for header display"""
         self.move_count = move_count
         self.max_tile = max_tile
         self.current_action = action_name
     
     def play_game(self):
-        """Watch AI play one complete game"""
+        """watch AI play one complete game"""
         env = Game2048Env()
         observation, info = env.reset()
-        self.game = env.game  # Sync GUI with environment
+        self.game = env.game  # sync GUI with environment
         
         action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT']
         max_tile = 0
@@ -94,7 +93,7 @@ class ModelViewer(GameGUI):
         print("Game started! Watching AI play...")
         
         while True:
-            # Handle events
+            # events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return "quit"
@@ -113,7 +112,7 @@ class ModelViewer(GameGUI):
                         self.move_delay = min(2000, self.move_delay + 100)
                         print(f"Slower! Delay: {self.move_delay}ms")
             
-            # Draw current state
+            # draw current state
             self.draw_info(move_count, max_tile, current_action)
             self.draw_header()
             self.draw_board()
@@ -128,33 +127,33 @@ class ModelViewer(GameGUI):
             current_action = action_names[action]
             move_count += 1
             
-            # Show decision briefly
+            # show decision
             self.draw_info(move_count, max_tile, current_action)
             self.draw_header()
             self.draw_board()
             pygame.display.flip()
             pygame.time.wait(self.move_delay)
             
-            # Execute move
+            # execute move
             observation, reward, terminated, truncated, info = env.step(action)
-            self.game = env.game  # Keep GUI synced
+            self.game = env.game  # keep GUI synced
             
-            # Update max tile
+            # update max tile
             current_max = int(np.max(observation))
             if current_max > max_tile:
                 max_tile = current_max
                 print(f"New max tile: {max_tile}")
             
-            # Check if game over
+            # check if game over
             if terminated or truncated:
                 final_score = env.game.score
                 
-                # Draw final state
+                # draw final state
                 self.draw_info(move_count, max_tile, "")
                 self.draw_header()
                 self.draw_board()
                 
-                # Game over message
+                # game over message
                 game_over_text = "GAME OVER"
                 game_over_surface = self.font_large.render(game_over_text, True, (239, 68, 68))
                 game_over_rect = game_over_surface.get_rect(center=(self.window_width // 2, 
@@ -167,7 +166,7 @@ class ModelViewer(GameGUI):
                 print(f"Max Tile: {max_tile}")
                 print(f"Moves: {move_count}\n")
                 
-                # Wait before closing
+                # wait before closing
                 pygame.time.wait(3000)
                 
                 return {
@@ -180,7 +179,6 @@ class ModelViewer(GameGUI):
 
 
 def main():
-    """Main function to run model viewer"""
     print("\n" + "="*70)
     print("2048 AI Model Viewer")
     print("="*70)
@@ -191,11 +189,9 @@ def main():
     print("  ESC: Quit")
     print("="*70 + "\n")
     
-    # Find model file
+    # find model file
     model_options = [
-        "../models/td_2048_ep24000_8x6.pkl",
         "../models/td_2048_best_8x6.pkl",
-        "models/td_2048_ep24000_8x6.pkl",
         "models/td_2048_best_8x6.pkl"
     ]
     
@@ -214,7 +210,7 @@ def main():
     try:
         viewer = ModelViewer(model_path)
         
-        # Track statistics across games
+        # track statistics across games
         games_played = 0
         total_score = 0
         max_tiles_achieved = {}
@@ -227,13 +223,13 @@ def main():
             elif result == "restart":
                 continue
             
-            # Update statistics
+            # update statistics
             games_played += 1
             total_score += result['score']
             max_tile = result['max_tile']
             max_tiles_achieved[max_tile] = max_tiles_achieved.get(max_tile, 0) + 1
             
-            # Show statistics
+            # show statistics
             print("="*50)
             print(f"Games Played: {games_played}")
             print(f"Average Score: {total_score / games_played:,.0f}")
@@ -252,7 +248,6 @@ def main():
         traceback.print_exc()
     finally:
         pygame.quit()
-        print("\nThanks for watching!")
 
 
 if __name__ == "__main__":
