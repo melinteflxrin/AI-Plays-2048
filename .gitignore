@@ -6,6 +6,7 @@ __pycache__/
 # Models folder
 models/*.pkl
 models/*.pth
+models/*.txt
 models/dqn_*
 !models/.gitkeep
 
