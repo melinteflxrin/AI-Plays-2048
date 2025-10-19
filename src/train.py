@@ -1,6 +1,5 @@
 """
-Simplified Training Script for 2048 AI using TD Learning with N-Tuple Networks
-No visualization - pure training mode for maximum speed
+training script for 2048 AI using TD learning with n-tuple networks
 """
 import os
 import time
@@ -22,20 +21,18 @@ def train_agent(episodes=50000,
                 min_lr=0.005,
                 lr_decay_rate=0.9995):
     """
-    Train TD agent without visualization
-    
-    Args:
-        episodes: Number of training episodes
-        save_frequency: Save model and print stats every N episodes
+    args:
+        episodes: number of training episodes
+        save_frequency: save model and print stats every N episodes
         tuple_patterns: '4x6' or '8x6' tuple network configuration
         learning_method: 'OTD', 'OTC', or 'OTD+TC'
-        v_init: Optimistic initialization value (0 for loaded models)
-        load_model: Whether to resume from existing model
-        load_model_path: Path to model file for resuming
-        use_lr_decay: Enable learning rate decay
-        initial_lr: Starting learning rate
-        min_lr: Minimum learning rate
-        lr_decay_rate: Decay rate per episode
+        v_init: initial value for ntuple network (0 for neutral, large value for optimistic exploration)
+        load_model: whether to resume from existing model
+        load_model_path: path to model file for resuming
+        use_lr_decay: enable learning rate decay
+        initial_lr: starting learning rate
+        min_lr: minimum learning rate
+        lr_decay_rate: decay rate per episode
     """
     print("\n" + "="*70)
     print("2048 AI Training - TD Learning with N-Tuple Network")
@@ -50,10 +47,10 @@ def train_agent(episodes=50000,
         print(f"  - LR Decay: {initial_lr} -> {min_lr}")
     print("="*70 + "\n")
     
-    # Create environment and agent
+    # create environment and agent
     env = Game2048Env()
     
-    # Set initial learning rate
+    # set initial learning rate
     if use_lr_decay:
         learning_rate = initial_lr
     elif learning_method == 'OTC':
@@ -69,7 +66,7 @@ def train_agent(episodes=50000,
         fine_tune_ratio=0.1
     )
     
-    # Load existing model if specified
+    # load existing model if specified
     if load_model and load_model_path:
         model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), load_model_path)
         if os.path.exists(model_path):
@@ -82,56 +79,67 @@ def train_agent(episodes=50000,
     
     agent.set_total_training_episodes(episodes)
     
-    # Ensure models directory exists
+    # ensure models directory exists
     os.makedirs("../models", exist_ok=True)
     
-    # Initialize best scores
-    # Always start from 0 so any new best score will be saved
-    best_score = 0
+    # initialize best scores
+    # load previous best score if exists
+    best_score_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", f"td_2048_best_{tuple_patterns}_score.txt")
+    if os.path.exists(best_score_file):
+        try:
+            with open(best_score_file, "r") as f:
+                best_score = int(f.read().strip())
+        except Exception:
+            best_score = 0
+    else:
+        best_score = 0
     best_max_tile = 0
     
-    # Statistics tracking
+    # statistics tracking
     recent_scores = deque(maxlen=100)
     recent_max_tiles = deque(maxlen=100)
     tile_achievements = {}
     
-    # Performance monitoring for early stopping
+    # performance monitoring for early stopping
     best_checkpoint_2048_rate = 0
     checkpoint_decline_count = 0
     
     start_time = time.time()
     
-    # Training loop
+    # training loop
     for episode in range(1, episodes + 1):
-        # Train one episode
+        # train one episode
         score, steps = agent.train_episode(env)
         max_tile = int(np.max(env.game.board))
         
-        # Apply learning rate decay
+        # apply learning rate decay
         if use_lr_decay and episode % 10 == 0:
             new_lr = max(min_lr, agent.learning_rate * lr_decay_rate)
             agent.learning_rate = new_lr
         
-        # Update statistics
+        # update statistics
         recent_scores.append(score)
         recent_max_tiles.append(max_tile)
         tile_achievements[max_tile] = tile_achievements.get(max_tile, 0) + 1
         
-        # Save best score model
+        # save best score model only if new score is higher than previous best
         if score > best_score:
             best_score = score
             best_max_tile = max(best_max_tile, max_tile)
             model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
                                      "models", f"td_2048_best_{tuple_patterns}.pkl")
             agent.save_model(model_path)
+            # save new best score to file
+            with open(best_score_file, "w") as f:
+                f.write(str(best_score))
             print(f"*** NEW BEST SCORE: {best_score:,} (Episode {episode}, Max Tile: {max_tile}) ***")
         
-        # Track new max tile achievements
+        # track new max tile achievements
         if max_tile > best_max_tile:
             best_max_tile = max_tile
             print(f"*** NEW MAX TILE: {max_tile} reached! (Episode {episode}, Score: {score:,}) ***")
         
-        # Print progress every 100 episodes
+        # print progress every 100 episodes
         if episode % 100 == 0:
             avg_score = sum(recent_scores) / len(recent_scores)
             avg_max_tile = sum(recent_max_tiles) / len(recent_max_tiles)
@@ -143,12 +151,12 @@ def train_agent(episodes=50000,
                   f"Best: {best_score:6.0f}/{best_max_tile:5d} | "
                   f"LR: {agent.learning_rate:.4f} | {eps_per_sec:.1f} ep/s")
         
-        # Detailed statistics every 1000 episodes
+        # detailed statistics every 1000 episodes
         if episode % 1000 == 0:
             print("\nTile Achievement Distribution (last 1000 episodes):")
             sorted_tiles = sorted(tile_achievements.keys(), reverse=True)
             
-            # Calculate achievement rates
+            # calculate achievement rates
             rate_2048 = (tile_achievements.get(2048, 0) / 1000) * 100
             rate_4096 = (tile_achievements.get(4096, 0) / 1000) * 100
             rate_8192 = (tile_achievements.get(8192, 0) / 1000) * 100
@@ -159,7 +167,7 @@ def train_agent(episodes=50000,
                     percentage = (count / 1000) * 100
                     print(f"  {tile:5d}-tile: {count:4d} times ({percentage:5.1f}%)")
             
-            # Monitor for performance decline (early stopping)
+            # monitor for performance decline (early stopping)
             if rate_2048 > best_checkpoint_2048_rate:
                 best_checkpoint_2048_rate = rate_2048
                 checkpoint_decline_count = 0
@@ -175,11 +183,11 @@ def train_agent(episodes=50000,
                     print(f"{'='*70}\n")
                     break
             
-            # Reset tile counter for next 1000 episodes
+            # reset tile counter for next 1000 episodes
             tile_achievements = {}
             print()
     
-    # Training complete - print final statistics
+    # training complete - print final statistics
     elapsed = time.time() - start_time
     hours = int(elapsed // 3600)
     minutes = int((elapsed % 3600) // 60)
@@ -204,29 +212,29 @@ if __name__ == "__main__":
     # TRAINING CONFIGURATION
     # ===================================================================
     
-    # Number of training episodes
+    # number of training episodes
     EPISODES = 50000
     
-    # Network configuration
+    # network configuration
     TUPLE_PATTERNS = '8x6'
     
-    # Learning method
+    # learning method
     LEARNING_METHOD = 'OTD'
     
-    # Optimistic initialization (only for fresh training)
+    # only used if starting fresh
     V_INIT = 0
     
-    # Resume from existing model
+    # resume from existing model
     LOAD_MODEL = True
     LOAD_MODEL_PATH = "models/td_2048_best_8x6.pkl"
     
-    # Learning rate settings
+    # learning rate settings
     USE_LR_DECAY = True
     INITIAL_LR = 0.025
     MIN_LR = 0.005
     LR_DECAY_RATE = 0.9995
     
-    # Save frequency
+    # save frequency
     SAVE_FREQUENCY = 100
     
     # ===================================================================

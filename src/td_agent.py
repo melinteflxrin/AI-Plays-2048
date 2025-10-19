@@ -5,8 +5,6 @@ based on research (Hung Guei et al., 2023)
 replaces the DQN agent with a more effective approach:
 - N-tuple networks instead of deep neural networks
 - TD learning instead of Q-learning (better for 2048)
-- afterstate learning framework (evaluates state after player move)
-- optimistic initialization
 """
 import numpy as np
 import copy
@@ -122,20 +120,19 @@ class TDAgent:
     
     def get_afterstate(self, board, action):
         """
-        get afterstate (board after action but before random tile)
+        we should get the afterstate: 
+        - board after move but before random tile
+        (returns the deterministic result of the player's action)
 
-        the core of the afterstate learning framework
-        instead of evaluating states, evaluate afterstates which are
-        deterministic outcomes of the player's actions
+        for simplicity, we will work with the state after random tile
         
         args:
-            board: Current board state (4x4 list)
             action: 0=up, 1=down, 2=left, 3=right
-
+            
         returns:
-            afterstate_board: board after the move
-            reward: points gained from merging
-            valid: if move was valid
+            afterstate_board: board after move
+            reward: points earned from merging
+            valid: if the move was valid
         """
         # create a copy to simulate the move
         from game import Game2048
@@ -150,28 +147,23 @@ class TDAgent:
             # remove the random tile that was added
             # we want the afterstate (before random tile)
             # find and remove the last added tile
-            pass  # for simplicity, we'll work with the state after random tile
+            pass  # for simplicity -> work with the state after random tile
         
         return temp_game.board, points, moved
     
     def choose_action(self, board, valid_actions=None, greedy=True):
         """
-        Choose action using greedy policy based on afterstate values
+        choose action using greedy policy based on afterstate values
         
-        This implements the policy from equation (10) in the paper:
-        π(s) = argmax_a [r_a + V(s'_a)]
+        implements the policy from equation (10) in the paper:
         
-        Where:
-        - r_a is the immediate reward from action a
-        - V(s'_a) is the value of the afterstate after action a
-        
-        Args:
-            board: Current board state
-            valid_actions: List of valid actions (None = try all)
-            greedy: Always choose best action (True for training)
+        args:
+            board: current board state
+            valid_actions: list of valid actions (None = try all)
+            greedy: always choose best action (True for training)
             
-        Returns:
-            action: Best action (0=up, 1=down, 2=left, 3=right)
+        returns:
+            action: best action (0=up, 1=down, 2=left, 3=right)
         """
         if valid_actions is None:
             valid_actions = [0, 1, 2, 3]
@@ -179,14 +171,14 @@ class TDAgent:
         best_action = None
         best_value = -float('inf')
         
-        # Evaluate each action
+        # evaluate each action
         for action in valid_actions:
             afterstate_board, reward, valid = self.get_afterstate(board, action)
             
             if not valid:
                 continue
             
-            # Calculate action value: immediate reward + afterstate value
+            # calculate action value: immediate reward + afterstate value
             afterstate_value = self.network.evaluate(afterstate_board)
             action_value = reward + afterstate_value
             
@@ -194,7 +186,7 @@ class TDAgent:
                 best_value = action_value
                 best_action = action
         
-        # If no valid action found, return random
+        # if no valid action found, return random
         if best_action is None:
             best_action = np.random.choice(valid_actions)
         
@@ -202,64 +194,64 @@ class TDAgent:
     
     def train_episode(self, env):
         """
-        Train for one episode using TD learning with afterstate framework
+        train for one episode using TD learning with afterstate framework
         
-        This implements the core training loop from the paper.
-        Each episode consists of:
-        1. Agent takes action -> gets afterstate
-        2. Environment adds random tile -> gets next state
-        3. Calculate TD error and update network
-        4. Repeat until game over
+        implements the core training loop from the paper.
+        each episode:
+        1. agent takes action -> gets afterstate
+        2. environment adds random tile -> gets next state
+        3. calculate TD error and update network
+        4. repeat until game over
         
-        Args:
+        args:
             env: Game2048Env instance
             
-        Returns:
-            episode_score: Final score of the episode
-            episode_steps: Number of moves made
+        returns:
+            episode_score: final score of the episode
+            episode_steps: number of moves made
         """
         observation, info = env.reset()
         board = env.game.board
         
-        episode_history = []  # Store (afterstate, reward) for backward update
+        episode_history = []  # store (afterstate, reward) for backward update
         episode_score = 0
         episode_steps = 0
         
         while True:
-            # 1. Choose action and get afterstate
+            # 1. choose action and get afterstate
             action = self.choose_action(board)
             
-            # Store current board for update
+            # store current board for update
             current_board = copy.deepcopy(board)
             
-            # 2. Take action in environment
+            # 2. take action in environment
             next_observation, reward, terminated, truncated, info = env.step(action)
             next_board = env.game.board
             
-            # Get afterstate (board after our move, before random tile)
+            # get afterstate (board after our move, before random tile)
             afterstate_board, move_reward, valid = self.get_afterstate(current_board, action)
             
             if not valid:
-                # Invalid move, skip
+                # invalid move, skip
                 continue
             
-            # Store for backward update
+            # store for backward update
             episode_history.append((afterstate_board, move_reward, next_board, terminated))
             
             episode_score = info['score']
             episode_steps += 1
             
-            # Update board for next iteration
+            # update board for next iteration
             board = next_board
             
-            # Check if game ended
+            # check if game ended
             if terminated or truncated:
                 break
         
-        # Backward update: Update all afterstates in the episode
+        # backward update: update all afterstates in the episode
         self._backward_update(episode_history)
         
-        # Update training state
+        # update training state
         self.episodes_trained += 1
         self._update_learning_rate()
         self._update_phase()
@@ -268,56 +260,51 @@ class TDAgent:
     
     def _backward_update(self, episode_history):
         """
-        Update network weights using backward update strategy
+        update network weights using backward update strategy
         
-        This processes the episode from the end to the beginning,
-        implementing the TD(0) update rule:
-        
-        V(s'_t) <- V(s'_t) + α * δ_t
-        
-        Where δ_t = r_{t+1} + V(s'_{t+1}) - V(s'_t)
-        
-        Args:
-            episode_history: List of (afterstate, reward, next_state, done) tuples
+        processes the episode from the end to the beginning
+
+        args:
+            episode_history: list of (afterstate, reward, next_state, done) tuples
         """
-        # Process from end to beginning
+        # process from end to beginning
         for i in range(len(episode_history) - 1, -1, -1):
             afterstate, reward, next_state, done = episode_history[i]
             
-            # Current afterstate value
+            # current afterstate value
             current_value = self.network.evaluate(afterstate)
             
-            # Calculate target value
+            # calculate target value
             if i == len(episode_history) - 1 or done:
-                # Terminal afterstate
+                # terminal afterstate
                 target_value = 0.0
             else:
-                # Get next afterstate value
+                # get next afterstate value
                 next_afterstate = episode_history[i + 1][0]
                 next_reward = episode_history[i + 1][1]
                 next_value = self.network.evaluate(next_afterstate)
                 target_value = next_reward + next_value
             
-            # Calculate TD error
+            # calculate TD error
             td_error = target_value - current_value
             
-            # Update statistics
+            # update statistics
             if td_error > 0:
                 self.stats['positive_td_errors'] += 1
             else:
                 self.stats['negative_td_errors'] += 1
             self.stats['total_updates'] += 1
             
-            # Update network based on learning method
+            # update network based on learning method
             if self.phase == 'fine-tuning' or self.learning_method == 'OTC':
-                # Use Temporal Coherence learning
+                # use Temporal Coherence learning
                 self.network.update_with_coherence(
                     afterstate, 
                     td_error, 
                     self.coherence_params
                 )
             else:
-                # Use standard TD learning
+                # use standard TD learning
                 self.network.update(
                     afterstate,
                     td_error,
@@ -325,7 +312,7 @@ class TDAgent:
                 )
     
     def get_exploration_stats(self):
-        """Get statistics about exploration (useful for monitoring)"""
+        """get statistics about exploration (for monitoring)"""
         total = self.stats['total_updates']
         if total == 0:
             return {'positive_ratio': 0.0, 'negative_ratio': 0.0}
@@ -337,15 +324,15 @@ class TDAgent:
         }
     
     def save_model(self, filepath):
-        """Save the trained model"""
+        """save the trained model"""
         self.network.save(filepath)
         print(f"Model saved to {filepath}")
     
     def load_model(self, filepath):
-        """Load a trained model"""
+        """load a trained model"""
         self.network.load(filepath)
         print(f"Model loaded from {filepath}")
     
     def get_network_statistics(self):
-        """Get network statistics for monitoring"""
+        """get network statistics for monitoring"""
         return self.network.get_statistics()
